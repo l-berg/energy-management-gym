@@ -17,12 +17,13 @@ STEPS_PER_EPISODE = 24 * 4
 
 
 def time_of_row(row):
-    time = datetime.datetime.strptime(f"{row['Date']} {row['Time of day']}", "%b %d, %Y %I:%M %p")
+    time = datetime.datetime.strptime(f"{row['Date']} {row['Time of day']}", "%b %d %Y %I:%M %p")
     return time
 
 
 @dataclass
 class EnergyManagementState:
+    """Encapsulates the environment's state information at a specific step."""
     step_no: int
     table_index: int
     consumption_row: dataclasses.InitVar
@@ -36,11 +37,11 @@ class EnergyManagementState:
     action: int = None         # only for display and debugging purposes
 
     def __post_init__(self, consumption_row):
+        """Extract state information from table row."""
         self.timestamp = time_of_row(consumption_row)
-        locale.setlocale(locale.LC_ALL, 'en_US.UTF-8')
-        self.total_load = locale.atoi(consumption_row['Total (grid load)[MWh]'])
-        self.residual_load = locale.atoi(consumption_row['Residual load[MWh]'])
-        self.hydro_pump_load = locale.atoi(consumption_row['Hydro pumped storage[MWh]'])
+        self.total_load = consumption_row['Total (grid load)[MWh]']
+        self.residual_load = consumption_row['Residual load[MWh]']
+        self.hydro_pump_load = consumption_row['Hydro pumped storage[MWh]']
 
 
 class EnergyManagementEnv(gym.Env):
@@ -86,14 +87,17 @@ class EnergyManagementEnv(gym.Env):
 
         self.random_generator = np.random.default_rng()
 
+        # import real-world electrical energy data
         self.generation_table = pd.read_csv('datasets/generation/generation_all.csv', sep=';')
         self.consumption_table = pd.read_csv('datasets/consumption/consumption_all.csv', sep=';')
+        locale.setlocale(locale.LC_ALL, 'en_US.UTF-8')
 
         self.step_counter = 0
         self.state = None
         self.plant = None
 
     def _update_state(self, action):
+        """Advance the environment's state by one step."""
         if action == 0:
             self.plant.less()
         else:
@@ -117,11 +121,12 @@ class EnergyManagementEnv(gym.Env):
         # state has been updated, now compute return values
         observation = self._obs()
 
-        diff = self.state.residual_generation - self.state.residual_load
+        # TODO: more sophisticated reward function
+        diff = (self.state.residual_generation - self.state.residual_load) / 1000  # [diff] = GWh
         if diff > 0:
             reward = -diff
         else:
-            reward = 10*diff
+            reward = 3*diff
 
         done = (self.step_counter >= STEPS_PER_EPISODE)
         info = {}
@@ -134,21 +139,25 @@ class EnergyManagementEnv(gym.Env):
         return observation, reward, done, info
 
     def _obs(self):
-        """Extract an observation (=features) from the current state"""
+        """Extract an observation (=features) from the current state."""
         d = self.state.timestamp
 
+        # extract time-of-year information
         year_date = datetime.datetime(d.year, 1, 1, 0, 0)
         one_year = datetime.datetime(d.year+1, 1, 1, 0, 0) - year_date
         sec_of_year = (d - year_date).total_seconds()
         portion_of_year = sec_of_year / one_year.total_seconds()
 
+        # weekend information
         # portion_of_week = d.weekday() / 7
         is_weekend = (d.isoweekday() >= 6)  # saturday or sunday (ISO: mon==1, ..., sun==7)
 
+        # extract time-of-day information
         sec_of_day = datetime.timedelta(hours=d.hour, minutes=d.minute, seconds=d.second).total_seconds()
         one_day = datetime.timedelta(days=1)
         portion_of_day = sec_of_day / one_day.total_seconds()
 
+        # construct feature vector
         w0 = 2*np.pi
         obs = np.array([
             np.sin(w0 * portion_of_year),
@@ -181,6 +190,7 @@ class EnergyManagementEnv(gym.Env):
         fig.suptitle(f'Energy Management on {str(self.state_history[0].timestamp.date())}')
         steps = list(range(len(self.state_history)))
 
+        # plot generated energy and load
         props = ['residual_generation', 'total_load', 'residual_load']
         energy_values = {}
         for p in props:
@@ -194,6 +204,7 @@ class EnergyManagementEnv(gym.Env):
         energy_ax.legend()
         energy_ax.set_title('Electrical Energy')
 
+        # plot observations
         feature_labels = [
              'sin(time / year)',
              'cos(time / year)',
@@ -214,6 +225,7 @@ class EnergyManagementEnv(gym.Env):
         feature_ax.legend()
         feature_ax.set_title('Observation')
 
+        # plot actions and rewards in one
         reward_steps = []
         reward_values = []
         action_steps = []
@@ -233,7 +245,7 @@ class EnergyManagementEnv(gym.Env):
         action_color = 'green'
         action_ax = reward_ax.twinx()
         action_ax.set_ylabel('action', color=action_color)
-        action_ax.plot(action_steps, action_values, label='action', color=action_color)
+        action_ax.scatter(action_steps, action_values, label='action', color=action_color, marker='x')
         action_ax.tick_params(axis='y', labelcolor=action_color)
 
         fig.tight_layout()
@@ -247,4 +259,4 @@ class EnergyManagementEnv(gym.Env):
         if seed is None:
             seed = np.random.randint(np.iinfo(np.int32).max)
         self.random_generator = np.random.default_rng(seed)
-        return seed
+        return [seed]
