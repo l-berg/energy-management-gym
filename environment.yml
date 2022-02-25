@@ -1,0 +1,13 @@
+name: energy-gym
+channels:
+  - pytorch
+  - defaults
+dependencies:
+  - pip
+  - python=3.8
+  - pytorch
+  - pip:
+    - pytest
+    - numpy
+    - gym
+    - stable-baselines3[extra]
