@@ -3,7 +3,7 @@ import dataclasses
 import gym
 from gym import spaces
 
-from src.generation_models import InstLogPlant
+from src.environment.generation_models import InstLogPlant
 
 from typing import Optional, List, Union
 from dataclasses import dataclass
@@ -11,6 +11,7 @@ import numpy as np
 import pandas as pd
 import datetime
 import locale
+import matplotlib.pyplot as plt
 
 STEPS_PER_EPISODE = 24 * 4
 
@@ -30,7 +31,9 @@ class EnergyManagementState:
     total_load: int = 0
     residual_load: int = 0
     hydro_pump_load: int = 0
-    obs: np.array = None  # only for display and debugging purposes
+    obs: np.array = None       # only for display and debugging purposes
+    reward: np.float32 = None  # only for display and debugging purposes
+    action: int = None         # only for display and debugging purposes
 
     def __post_init__(self, consumption_row):
         self.timestamp = time_of_row(consumption_row)
@@ -110,7 +113,6 @@ class EnergyManagementEnv(gym.Env):
         assert self.state is not None, "Call reset before using step method."
 
         self._update_state(action)
-        self.state_history.append(self.state)  # maybe also include obs and reward for visualization?
 
         # state has been updated, now compute return values
         observation = self._obs()
@@ -123,6 +125,12 @@ class EnergyManagementEnv(gym.Env):
 
         done = (self.step_counter >= STEPS_PER_EPISODE)
         info = {}
+
+        # for visualization and debugging
+        self.state.action = action
+        self.state.obs = observation
+        self.state.reward = reward
+
         return observation, reward, done, info
 
     def _obs(self):
@@ -150,6 +158,7 @@ class EnergyManagementEnv(gym.Env):
             is_weekend,
         ], dtype=np.float32)
 
+        self.state_history.append(self.state)  # maybe also include obs and reward for visualization?
         return obs
 
     def reset(self, seed = None):
@@ -168,8 +177,69 @@ class EnergyManagementEnv(gym.Env):
         return self._obs()  # reward, done, info can't be included
     
     def render(self, mode='human'):
-        pass
-    
+        fig, (energy_ax, feature_ax, reward_ax) = plt.subplots(3, dpi=100, figsize=(8,8))  # (width, height)
+        fig.suptitle(f'Energy Management on {str(self.state_history[0].timestamp.date())}')
+        steps = list(range(len(self.state_history)))
+
+        props = ['residual_generation', 'total_load', 'residual_load']
+        energy_values = {}
+        for p in props:
+            values = []
+            for state in self.state_history:
+                values.append(getattr(state, p))
+            energy_values[p] = values
+
+        for label, values in energy_values.items():
+            energy_ax.plot(steps, values, label=label)
+        energy_ax.legend()
+        energy_ax.set_title('Electrical Energy')
+
+        feature_labels = [
+             'sin(time / year)',
+             'cos(time / year)',
+             'sin(time / day)',
+             'cos(time / day)',
+             'is_weekend',
+        ]
+        feature_steps = []
+        feature_list = []
+        for state in self.state_history:
+            if state.obs is not None:
+                feature_steps.append(state.step_no)
+                feature_list.append(state.obs)
+        feature_mat = np.stack(feature_list, axis=1)
+
+        for label, feature_values in zip(feature_labels, feature_mat):
+            feature_ax.plot(feature_steps, feature_values, label=label)
+        feature_ax.legend()
+        feature_ax.set_title('Observation')
+
+        reward_steps = []
+        reward_values = []
+        action_steps = []
+        action_values = []
+        for state in self.state_history:
+            if state.reward is not None:
+                reward_steps.append(state.step_no)
+                reward_values.append(state.reward)
+            if state.action is not None:
+                action_steps.append(state.step_no)
+                action_values.append(state.action)
+
+        reward_ax.plot(reward_steps, reward_values, label='reward')
+        reward_ax.set_ylabel('reward')
+        reward_ax.set_title('Rewards/Actions')
+
+        action_color = 'green'
+        action_ax = reward_ax.twinx()
+        action_ax.set_ylabel('action', color=action_color)
+        action_ax.plot(action_steps, action_values, label='action', color=action_color)
+        action_ax.tick_params(axis='y', labelcolor=action_color)
+
+        fig.tight_layout()
+        plt.show()
+
+
     def close(self):
         pass
 

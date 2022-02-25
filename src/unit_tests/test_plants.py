@@ -1,4 +1,4 @@
-import src.generation_models as gm
+import src.environment.generation_models as gm
 
 import pytest
 

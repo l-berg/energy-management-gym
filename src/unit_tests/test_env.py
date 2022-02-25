@@ -1,4 +1,4 @@
-import src.energy_management as em
+import src.environment.energy_management as em
 from src.utils.utils import set_seed
 
 from stable_baselines3.common.env_checker import check_env
