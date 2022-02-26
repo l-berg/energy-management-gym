@@ -6,6 +6,7 @@ from stable_baselines3.common.env_checker import check_env
 import torch
 import random
 import numpy as np
+import pandas as pd
 
 
 def test_episode_length():
@@ -53,5 +54,17 @@ def test_reproducibility():
 def test_stable_baselines_compatability():
     env = em.EnergyManagementEnv()
     check_env(env)
+
+
+def test_data_coherency():
+    def verify_description(basepath):
+        descpath = f'{basepath[:-4]}_description.csv'
+
+        df = pd.read_csv(basepath, sep=';')
+        desc = pd.read_csv(descpath, sep=';', index_col=0)
+        assert np.isclose(df.describe(), desc).all()
+
+    verify_description('datasets/generation/generation.csv')
+    verify_description('datasets/consumption/consumption.csv')
 
 

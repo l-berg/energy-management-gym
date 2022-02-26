@@ -45,7 +45,8 @@ class EnergyManagementState:
 
 
 class EnergyManagementEnv(gym.Env):
-    """Custom Environment that follows gym interface
+    """Custom Environment that follows gym interface.
+    Note, that all episodes start at 00:00 CET, but time features use CEST when appropriate. (12 AM becomes 1 AM)
 
     ### Observation space
     00 | sin(time/year)
@@ -53,9 +54,9 @@ class EnergyManagementEnv(gym.Env):
     02 | sin(time/day)
     03 | cos(time/day)
     04 | is_weekend
+    05 | current energy residual load
+    06 | current energy production
     TODO
-    07 | current energy consumption
-    08 | current energy production
     09 | current energy production solar
     10 | current energy production wind
     11 | current energy consumption hydro storage
@@ -81,16 +82,20 @@ class EnergyManagementEnv(gym.Env):
             1, 1,
             1, 1,
             True,
-            ], dtype=np.float32,
+            np.finfo(np.float32).max, np.finfo(np.float32).max,
+        ], dtype=np.float32,
         )
         self.observation_space = spaces.Box(low=-high, high=high, dtype=np.float32)
 
         self.random_generator = np.random.default_rng()
 
         # import real-world electrical energy data
-        self.generation_table = pd.read_csv('datasets/generation/generation_all.csv', sep=';')
-        self.consumption_table = pd.read_csv('datasets/consumption/consumption_all.csv', sep=';')
-        locale.setlocale(locale.LC_ALL, 'en_US.UTF-8')
+        generation_path = 'datasets/generation/generation.csv'
+        self.generation_table = pd.read_csv(generation_path, sep=';')
+        self.generation_description = pd.read_csv(f'{generation_path[:-4]}_description.csv', sep=';', index_col=0)
+        consumption_path = 'datasets/consumption/consumption.csv'
+        self.consumption_table = pd.read_csv(consumption_path, sep=';')
+        self.consumption_description = pd.read_csv(f'{consumption_path[:-4]}_description.csv', sep=';', index_col=0)
 
         self.step_counter = 0
         self.state = None
@@ -157,6 +162,13 @@ class EnergyManagementEnv(gym.Env):
         one_day = datetime.timedelta(days=1)
         portion_of_day = sec_of_day / one_day.total_seconds()
 
+        # normalize energy totals
+        eps = np.finfo(np.float32).eps.item()
+        residual_load_norm = (self.state.residual_load - self.consumption_description['Residual load[MWh]'].loc['mean']
+                              ) / (self.consumption_description['Residual load[MWh]'].loc['std'] + eps)
+        residual_gen_norm = (self.state.residual_generation - self.consumption_description['Residual load[MWh]'].loc['mean']
+                              ) / (self.consumption_description['Residual load[MWh]'].loc['std'] + eps)
+
         # construct feature vector
         w0 = 2*np.pi
         obs = np.array([
@@ -165,6 +177,8 @@ class EnergyManagementEnv(gym.Env):
             np.sin(w0 * portion_of_day),
             np.cos(w0 * portion_of_day),
             is_weekend,
+            residual_load_norm,
+            residual_gen_norm,
         ], dtype=np.float32)
 
         self.state_history.append(self.state)  # maybe also include obs and reward for visualization?
@@ -206,11 +220,13 @@ class EnergyManagementEnv(gym.Env):
 
         # plot observations
         feature_labels = [
-             'sin(time / year)',
-             'cos(time / year)',
-             'sin(time / day)',
-             'cos(time / day)',
-             'is_weekend',
+            'sin(time / year)',
+            'cos(time / year)',
+            'sin(time / day)',
+            'cos(time / day)',
+            'is_weekend',
+            'residual load',
+            'residual gen',
         ]
         feature_steps = []
         feature_list = []
