@@ -17,6 +17,10 @@ class PowerPlant:
         """Signal to decrease generation"""
         pass
 
+    def get_costs(self):
+        """Returns the cost of operating the power plant at the current level"""
+        pass
+
 class InstLogPlant(PowerPlant):
     """Changes take effect instantly"""
     CHANGE_FACTOR = 0.1
@@ -29,3 +33,7 @@ class InstLogPlant(PowerPlant):
 
     def less(self):
         self.current_output = max(self.current_output * (1-self.CHANGE_FACTOR), 0)
+
+    def get_costs(self):
+        return self.current_output
+
