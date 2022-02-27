@@ -9,17 +9,22 @@ class PowerPlant:
         """Returns the amount of power generated"""
         pass
 
-    def more(self):
-        """Signal to increase generation"""
+    def more(self, delta):
+        """Signal to increase generation by fraction of max_capacity"""
         pass
 
-    def less(self):
-        """Signal to decrease generation"""
+    def less(self, delta):
+        """Signal to decrease generation by fraction of max_capacity"""
+        pass
+
+    def set_output(self, new_level):
+        """Signal to set output to desired fraction of max_capacity"""
         pass
 
     def get_costs(self):
         """Returns the cost of operating the power plant at the current level"""
         pass
+
 
 class InstLogPlant(PowerPlant):
     """Changes take effect instantly"""
@@ -28,11 +33,14 @@ class InstLogPlant(PowerPlant):
     def step(self):
         return self.current_output
 
-    def more(self):
+    def more(self, delta):
         self.current_output = min(self.current_output * (1+self.CHANGE_FACTOR), self.max_capacity)
 
-    def less(self):
+    def less(self, delta):
         self.current_output = max(self.current_output * (1-self.CHANGE_FACTOR), 0)
+
+    def set_output(self, new_level):
+        self.current_output = new_level * self.max_capacity
 
     def get_costs(self):
         return self.current_output

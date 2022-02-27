@@ -10,7 +10,7 @@ import pandas as pd
 
 
 def test_episode_length():
-    expected_steps = 4*24
+    expected_steps = 4*24*5
 
     env = em.EnergyManagementEnv()
     env.reset()
@@ -51,7 +51,7 @@ def test_reproducibility():
     assert r_random == random.random()
 
 
-def test_stable_baselines_compatability():
+def test_stable_baselines_compatibility():
     env = em.EnergyManagementEnv()
     check_env(env)
 
