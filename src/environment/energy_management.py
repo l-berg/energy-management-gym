@@ -15,10 +15,10 @@ import locale
 import matplotlib.pyplot as plt
 
 STEP_SIZE = 15
-SUB_STEPS = 5
-STEPS_PER_EPISODE = 24 * 60 / STEP_SIZE
+STEPS_PER_EPISODE = 1 * 24 * 60 / STEP_SIZE
 NUM_ACTIONS = 5
-ACTION_RANGE = 0.1
+ACTION_RANGE = 0.05
+RELATIVE_CONTROL = True
 
 
 def time_of_row(row):
@@ -61,18 +61,23 @@ class EnergyManagementEnv(gym.Env):
     04 | is_weekend
     05 | current energy residual load
     06 | current energy production
-    TODO
-    09 | current energy production solar
-    10 | current energy production wind
-    11 | current energy consumption hydro storage
-    12 | current energy production hydro storage
-    000 | action affects slow fossil
-    001 | action affects fast fossil
-    002 | action affects hydro storage
+    07 | current energy production lignite
+    08 | current energy production hard coal
+    09 | current energy production gas
+    10 | current energy production biomass
+    11 | current energy production nuclear
+    12 | action affects lignite
+    13 | action affects hard coal
+    14 | action affects gas
+    15 | action affects biomass
+    16 | action affects nuclear
 
     ### Action space
-    1 | higher output
-    2 | lower output
+    0 | decrease plant output by 5% of total capacity
+    1 | decrease plant output by 2.5% of total capacity
+    2 | do nothing
+    3 | increase plant output by 2.5% of total capacity
+    4 | increase plant output by 5% of total capacity
     """
     metadata = {'render.modes': ['human']}
     state_history = []
@@ -82,7 +87,6 @@ class EnergyManagementEnv(gym.Env):
 
         self.action_space = spaces.Discrete(NUM_ACTIONS)
 
-        # np.finfo(np.float32).max,
         float_max = np.finfo(np.float32).max
         high = np.array([
             1, 1,
@@ -115,18 +119,21 @@ class EnergyManagementEnv(gym.Env):
     def _update_state(self, action):
         """Advance the environment's state by one step."""
         # signal current plant to change output
-        mid_point = int(NUM_ACTIONS / 2)
-        if action < mid_point:
-            self.plants[self.sub_step].less((ACTION_RANGE / mid_point) * (action + 1))
-        elif action > mid_point:
-            self.plants[self.sub_step].more((ACTION_RANGE / mid_point) * (action - mid_point))
-        elif NUM_ACTIONS % 2 == 0:
-            self.plants[self.sub_step].more((ACTION_RANGE / mid_point))
+        if RELATIVE_CONTROL:
+            mid_point = int(NUM_ACTIONS / 2)
+            if action < mid_point:
+                self.plants[self.sub_step].less((ACTION_RANGE / mid_point) * (action + 1))
+            elif action > mid_point:
+                self.plants[self.sub_step].more((ACTION_RANGE / mid_point) * (action - mid_point))
+            elif NUM_ACTIONS % 2 == 0:
+                self.plants[self.sub_step].more((ACTION_RANGE / mid_point))
+        else:
+            self.plants[self.sub_step].set_output(1.0 / NUM_ACTIONS)
 
         self.sub_step += 1
 
         # only update state after all plants have been updated
-        if self.sub_step == SUB_STEPS:
+        if self.sub_step == len(self.plants):
             self.step_counter += 1
             self.sub_step = 0
             next_table_index = self.state.table_index + 1
@@ -148,14 +155,14 @@ class EnergyManagementEnv(gym.Env):
 
         # calculate reward
         max_cost = max(list(p.price_per_mwh for p in self.plants))
-        diff = (self.state.residual_generation - self.state.residual_load) / 1000  # [diff] = GWh
-        reward = max_cost * self.state.residual_load / 1000.0
+        diff = (self.state.residual_generation - self.state.residual_load) / 10000.0  # [diff] = GWh
+        reward = max_cost * self.state.residual_load / 10000.0
         for plant in self.plants:
-            reward -= plant.get_costs() / 1000.0
+            reward -= plant.get_costs() / 10000.0
         if diff < 0:
             reward += 3 * diff * max_cost
         else:
-            reward -= diff
+            reward -= diff * max_cost
 
         done = (self.step_counter >= STEPS_PER_EPISODE)
         info = {}
@@ -200,10 +207,7 @@ class EnergyManagementEnv(gym.Env):
         # get current output for all plants
         generation = np.zeros(len(self.plants))
         for i in range(len(generation)):
-            if self.state.residual_generation == 0:
-                generation[i] = 0
-            else:
-                generation[i] = self.plants[i].target_output / self.state.residual_generation
+            generation[i] = self.plants[i].target_output / self.plants[i].max_capacity
 
         # construct feature vector
         w0 = 2*np.pi
@@ -223,7 +227,7 @@ class EnergyManagementEnv(gym.Env):
             self.state_history.append(self.state)  # maybe also include obs and reward for visualization?
         return obs
 
-    def reset(self, seed = None):
+    def reset(self, seed=None):
         if seed is not None:
             self.seed(seed)
 
@@ -233,7 +237,8 @@ class EnergyManagementEnv(gym.Env):
 
         table_index = self.random_generator.integers(self.consumption_table.shape[0]/STEPS_PER_EPISODE) * STEPS_PER_EPISODE
         consumption_row = self.consumption_table.loc[table_index]
-        self.state = EnergyManagementState(step_no=self.step_counter, table_index=table_index, consumption_row=consumption_row)
+        self.state = EnergyManagementState(step_no=self.step_counter,
+                                           table_index=table_index, consumption_row=consumption_row)
 
         # initialize plants with current year capacity and current date output
         generation_row = self.generation_table.loc[table_index]
@@ -241,13 +246,22 @@ class EnergyManagementEnv(gym.Env):
         for r in range(self.capacity_table.shape[0]):
             if time_of_row(self.capacity_table.loc[r]).year == current_year:
                 capacity_row = self.capacity_table.loc[r]
-
         step_time = 60 / STEP_SIZE
-        self.plants = [vp.LignitePowerPlant(generation_row['Lignite[MWh]'], capacity_row['Lignite[MW]'] / step_time, STEP_SIZE),
-                       vp.HardCoalPowerPlant(generation_row['Hard coal[MWh]'], capacity_row['Hard coal[MW]'] / step_time, STEP_SIZE),
-                       vp.GasPowerPlant(generation_row['Fossil gas[MWh]'], capacity_row['Fossil gas[MW]'] / step_time, STEP_SIZE),
-                       vp.BioMassPowerPlant(generation_row['Biomass[MWh]'], capacity_row['Biomass[MW]'] / step_time, STEP_SIZE),
-                       vp.NuclearPowerPlant(generation_row['Nuclear[MWh]'], capacity_row['Nuclear[MW]'] / step_time, STEP_SIZE)]
+        plant_mode = 'group'
+        self.plants = [vp.LignitePowerPlant(generation_row['Lignite[MWh]'],
+                                            capacity_row['Lignite[MW]'] / step_time, STEP_SIZE, plant_mode),
+                       vp.HardCoalPowerPlant(generation_row['Hard coal[MWh]'],
+                                             capacity_row['Hard coal[MW]'] / step_time, STEP_SIZE, plant_mode),
+                       vp.GasPowerPlant(generation_row['Fossil gas[MWh]'],
+                                        capacity_row['Fossil gas[MW]'] / step_time, STEP_SIZE, plant_mode),
+                       vp.BioMassPowerPlant(generation_row['Biomass[MWh]'],
+                                            capacity_row['Biomass[MW]'] / step_time, STEP_SIZE, plant_mode),
+                       vp.NuclearPowerPlant(generation_row['Nuclear[MWh]'],
+                                            capacity_row['Nuclear[MW]'] / step_time, STEP_SIZE, plant_mode)]
+
+        # set initial generation
+        for plant in self.plants:
+            self.state.residual_generation += plant.current_output
 
         return self._obs()  # reward, done, info can't be included
     
@@ -279,7 +293,27 @@ class EnergyManagementEnv(gym.Env):
             'is_weekend',
             'residual load',
             'residual gen',
+            'lignite gen',
+            'hard coal gen',
+            'gas gen',
+            'biomass gen',
+            'nuclear gen'
         ]
+        # used to toggle visibility of each feature in the graph
+        feature_toggle = {
+            'sin(time / year)': False,
+            'cos(time / year)': False,
+            'sin(time / day)': False,
+            'cos(time / day)': False,
+            'is_weekend': False,
+            'residual load': False,
+            'residual gen': False,
+            'lignite gen': True,
+            'hard coal gen': True,
+            'gas gen': True,
+            'biomass gen': True,
+            'nuclear gen': True
+        }
         feature_steps = []
         feature_list = []
         for state in self.state_history:
@@ -289,7 +323,8 @@ class EnergyManagementEnv(gym.Env):
         feature_mat = np.stack(feature_list, axis=1)
 
         for label, feature_values in zip(feature_labels, feature_mat):
-            feature_ax.plot(feature_steps, feature_values, label=label)
+            if feature_toggle[label]:
+                feature_ax.plot(feature_steps, feature_values, label=label)
         feature_ax.legend()
         feature_ax.set_title('Observation')
 

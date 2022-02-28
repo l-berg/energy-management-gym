@@ -41,7 +41,7 @@ def test_load_following_plant():
     max_capacity = 1000
     delta = 0.1
     step_size = 1
-    plant = vp.LignitePowerPlant(initial_output, max_capacity, step_size)
+    plant = vp.LignitePowerPlant(initial_output, max_capacity, step_size, 'single')
 
     # test initial production
     assert plant.step() == initial_output
