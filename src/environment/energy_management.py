@@ -5,13 +5,14 @@ from gym import spaces
 
 from src.environment.generation_models import InstLogPlant
 import src.environment.variable_power_plants as vp
+from src.data_preperation.data_access import EnergyData, WeatherData
 
 from typing import Optional, List, Union
 from dataclasses import dataclass
 import numpy as np
 import pandas as pd
-import datetime
-import locale
+from datetime import datetime, timedelta
+import pytz as tz
 import matplotlib.pyplot as plt
 
 STEP_SIZE = 15
@@ -21,19 +22,13 @@ ACTION_RANGE = 0.05
 RELATIVE_CONTROL = True
 
 
-def time_of_row(row):
-    time = datetime.datetime.strptime(f"{row['Date']} {row['Time of day']}", "%b %d %Y %I:%M %p")
-    return time
-
-
 @dataclass
 class EnergyManagementState:
     """Encapsulates the environment's state information at a specific step."""
     step_no: int
-    table_index: int
-    consumption_row: dataclasses.InitVar
+    consumption: dataclasses.InitVar[pd.Series]
     residual_generation: np.float32 = 0
-    timestamp: datetime.datetime = None
+    timestamp: datetime = None
     total_load: int = 0
     residual_load: int = 0
     hydro_pump_load: int = 0
@@ -41,12 +36,11 @@ class EnergyManagementState:
     reward: np.float32 = None  # only for display and debugging purposes
     action: int = None         # only for display and debugging purposes
 
-    def __post_init__(self, consumption_row):
-        """Extract state information from table row."""
-        self.timestamp = time_of_row(consumption_row)
-        self.total_load = consumption_row['Total (grid load)[MWh]']
-        self.residual_load = consumption_row['Residual load[MWh]']
-        self.hydro_pump_load = consumption_row['Hydro pumped storage[MWh]']
+    def __post_init__(self, consumption):
+        """Extract state information from table snapshot."""
+        self.total_load = consumption['Total (grid load)[MW]']
+        self.residual_load = consumption['Residual load[MW]']
+        self.hydro_pump_load = consumption['Hydro pumped storage[MW]']
 
 
 class EnergyManagementEnv(gym.Env):
@@ -81,9 +75,55 @@ class EnergyManagementEnv(gym.Env):
     """
     metadata = {'render.modes': ['human']}
     state_history = []
+    obs_timezone = tz.timezone('Europe/Berlin')
 
-    def __init__(self):
+    def __init__(self, episode_length: timedelta = None, step_period: timedelta = None,
+                 start_date: Union[str, datetime] = None, end_date: Union[str, datetime] = None):
+        """
+        Given dates are interpreted as of timezone 'Europe/Berlin'.
+
+        :param episode_length: length of an episode (default: 1 day)
+        :param step_period: step size (default: 15 minutes)
+        :param start_date: specifies start of interval to use real world data from (inclusive, default: 2015-01)
+        :param end_date: end of interval of real world data (exclusive, default: 2022-01)
+        """
         super(EnergyManagementEnv, self).__init__()
+
+        # episode length
+        if episode_length is None:
+            self.episode_length = timedelta(days=1)
+        else:
+            self.episode_length = episode_length
+
+        # step period
+        if step_period is None:
+            self.step_period = timedelta(minutes=15)
+        else:
+            self.step_period = step_period
+
+        # start date
+        default_start_date = pd.Timestamp('2015-01').tz_localize(self.obs_timezone).tz_convert('UTC').to_pydatetime()
+        if start_date is None:
+            start_date = '2015-01'
+        self.start_date = pd.Timestamp(start_date).tz_localize(self.obs_timezone).tz_convert('UTC').to_pydatetime()
+        if self.start_date < default_start_date:
+            raise IndexError(f'Given start date {self.start_date} comes before 2015-01')
+
+        # end date
+        default_end_date = pd.Timestamp('2022-01').tz_localize(self.obs_timezone).tz_convert('UTC').to_pydatetime()
+        if end_date is None:
+            end_date = '2022-01'
+        self.end_date = pd.Timestamp(end_date).tz_localize(self.obs_timezone).tz_convert('UTC').to_pydatetime()
+        if self.end_date > default_end_date:
+            raise IndexError(f'Given end date {self.end_date} comes after 2022-01')
+
+        # draw conclusions for #steps and #episodes
+        self.steps_per_episode = int(self.episode_length / self.step_period)
+        if self.steps_per_episode * self.step_period != self.episode_length:
+            raise ValueError(f'Step size {self.step_period} does not evenly divide episode length {self.episode_length}')
+        self.episodes_in_interval = int((self.end_date - self.start_date) / self.episode_length)
+        if self.episodes_in_interval * self.episode_length != self.end_date - self.start_date:
+            print(f'Warning: Episode length {self.episode_length} does not evenly divide chosen interval from {self.start_date} to {self.end_date}')
 
         self.action_space = spaces.Discrete(NUM_ACTIONS)
 
@@ -102,15 +142,13 @@ class EnergyManagementEnv(gym.Env):
         self.random_generator = np.random.default_rng()
 
         # import real-world electrical energy dataDE
-        generation_path = 'datasets/generation/generation.csv'
-        self.generation_table = pd.read_csv(generation_path, sep=';')
-        self.generation_description = pd.read_csv(f'{generation_path[:-4]}_description.csv', sep=';', index_col=0)
-        consumption_path = 'datasets/consumption/consumption.csv'
-        self.consumption_table = pd.read_csv(consumption_path, sep=';')
-        self.consumption_description = pd.read_csv(f'{consumption_path[:-4]}_description.csv', sep=';', index_col=0)
-        capacity_path = 'datasets/installed_generation/installed_generation_all.csv'
-        self.capacity_table = pd.read_csv(capacity_path, sep=";")
+        self.generation_data = EnergyData('datasets/generation/generation.csv')
+        self.consumption_data = EnergyData('datasets/consumption/consumption.csv')
+        self.capacity_data = EnergyData('datasets/installed_generation/installed_generation.csv')
+        # self.weather_mean = WeatherData('datasets/weather_fine/weather_mean.csv')
+        # self.weather_std = WeatherData('datasets/weather_fine/weather_std.csv')
 
+        self.current_time = None
         self.step_counter = 0
         self.sub_step = 0
         self.state = None
@@ -120,6 +158,7 @@ class EnergyManagementEnv(gym.Env):
         """Advance the environment's state by one step."""
         # signal current plant to change output
         if RELATIVE_CONTROL:
+            # f(a) = ACTION_RANGE / (NUM_ACTIONS/2) * (action - NUM_ACTIONS/2)
             mid_point = int(NUM_ACTIONS / 2)
             if action < mid_point:
                 self.plants[self.sub_step].less((ACTION_RANGE / mid_point) * (action + 1))
@@ -131,18 +170,17 @@ class EnergyManagementEnv(gym.Env):
             self.plants[self.sub_step].set_output(1.0 / NUM_ACTIONS)
 
         self.sub_step += 1
-
         # only update state after all plants have been updated
         if self.sub_step == len(self.plants):
+            self.current_time += self.step_period
             self.step_counter += 1
             self.sub_step = 0
-            next_table_index = self.state.table_index + 1
-            consumption_row = self.consumption_table.loc[next_table_index]
+            consumption_snapshot = self.consumption_data[self.current_time]
             residual_generation = 0
             for plant in self.plants:
                 residual_generation += plant.step()
-            self.state = EnergyManagementState(step_no=self.step_counter, table_index=next_table_index,
-                                               consumption_row=consumption_row, residual_generation=residual_generation)
+            self.state = EnergyManagementState(step_no=self.step_counter, timestamp=self.current_time,
+                                               consumption=consumption_snapshot, residual_generation=residual_generation)
 
     def step(self, action):
         err_msg = f"{action!r} ({type(action)}) invalid"
@@ -164,7 +202,7 @@ class EnergyManagementEnv(gym.Env):
         else:
             reward -= diff * max_cost
 
-        done = (self.step_counter >= STEPS_PER_EPISODE)
+        done = (self.step_counter >= self.steps_per_episode)
         info = {}
 
         # for visualization and debugging
@@ -176,29 +214,28 @@ class EnergyManagementEnv(gym.Env):
 
     def _obs(self):
         """Extract an observation (=features) from the current state."""
-        d = self.state.timestamp
+        d = self.state.timestamp.astimezone(self.obs_timezone).replace(tzinfo=None)
 
         # extract time-of-year information
-        year_date = datetime.datetime(d.year, 1, 1, 0, 0)
-        one_year = datetime.datetime(d.year+1, 1, 1, 0, 0) - year_date
-        sec_of_year = (d - year_date).total_seconds()
-        portion_of_year = sec_of_year / one_year.total_seconds()
+        year_date = datetime(d.year, 1, 1)
+        one_year = datetime(d.year+1, 1, 1) - year_date
+        portion_of_year = (d - year_date) / one_year
 
         # weekend information
         # portion_of_week = d.weekday() / 7
         is_weekend = (d.isoweekday() >= 6)  # saturday or sunday (ISO: mon==1, ..., sun==7)
 
         # extract time-of-day information
-        sec_of_day = datetime.timedelta(hours=d.hour, minutes=d.minute, seconds=d.second).total_seconds()
-        one_day = datetime.timedelta(days=1)
-        portion_of_day = sec_of_day / one_day.total_seconds()
+        time_of_day = timedelta(hours=d.hour, minutes=d.minute, seconds=d.second)
+        one_day = timedelta(days=1)
+        portion_of_day = time_of_day / one_day
 
         # normalize energy totals
         eps = np.finfo(np.float32).eps.item()
-        residual_load_norm = (self.state.residual_load - self.consumption_description['Residual load[MWh]'].loc['mean']
-                              ) / (self.consumption_description['Residual load[MWh]'].loc['std'] + eps)
-        residual_gen_norm = (self.state.residual_generation - self.consumption_description['Residual load[MWh]'].loc['mean']
-                             ) / (self.consumption_description['Residual load[MWh]'].loc['std'] + eps)
+        residual_load_norm = (self.state.residual_load - self.consumption_data.mean['Residual load[MW]']
+                              ) / (self.consumption_data.std['Residual load[MW]'] + eps)
+        residual_gen_norm = (self.state.residual_generation - self.consumption_data.mean['Residual load[MW]']
+                             ) / (self.consumption_data.std['Residual load[MW]'] + eps)
 
         # one hot encode active plant
         active_plant = np.zeros(len(self.plants))
@@ -235,51 +272,54 @@ class EnergyManagementEnv(gym.Env):
         self.sub_step = 0
         self.state_history = []
 
-        table_index = self.random_generator.integers(self.consumption_table.shape[0]/STEPS_PER_EPISODE) * STEPS_PER_EPISODE
-        consumption_row = self.consumption_table.loc[table_index]
-        self.state = EnergyManagementState(step_no=self.step_counter,
-                                           table_index=table_index, consumption_row=consumption_row)
+        # random starting time
+        episode_no = self.random_generator.integers(self.episodes_in_interval)
+        self.current_time = self.start_date + episode_no * self.episode_length
 
         # initialize plants with current year capacity and current date output
-        generation_row = self.generation_table.loc[table_index]
-        current_year = self.state.timestamp.year
-        for r in range(self.capacity_table.shape[0]):
-            if time_of_row(self.capacity_table.loc[r]).year == current_year:
-                capacity_row = self.capacity_table.loc[r]
-        step_time = 60 / STEP_SIZE
+        generation = self.generation_data[self.current_time]
+        capacity = self.capacity_data[self.current_time]
+
         plant_mode = 'group'
-        self.plants = [vp.LignitePowerPlant(generation_row['Lignite[MWh]'],
-                                            capacity_row['Lignite[MW]'] / step_time, STEP_SIZE, plant_mode),
-                       vp.HardCoalPowerPlant(generation_row['Hard coal[MWh]'],
-                                             capacity_row['Hard coal[MW]'] / step_time, STEP_SIZE, plant_mode),
-                       vp.GasPowerPlant(generation_row['Fossil gas[MWh]'],
-                                        capacity_row['Fossil gas[MW]'] / step_time, STEP_SIZE, plant_mode),
-                       vp.BioMassPowerPlant(generation_row['Biomass[MWh]'],
-                                            capacity_row['Biomass[MW]'] / step_time, STEP_SIZE, plant_mode),
-                       vp.NuclearPowerPlant(generation_row['Nuclear[MWh]'],
-                                            capacity_row['Nuclear[MW]'] / step_time, STEP_SIZE, plant_mode)]
+        step_minutes = self.step_period.total_seconds() / 60
+        self.plants = [
+            vp.LignitePowerPlant(generation['Lignite[MW]'], capacity['Lignite[MW]'], step_minutes, plant_mode),
+            vp.HardCoalPowerPlant(generation['Hard coal[MW]'], capacity['Hard coal[MW]'], step_minutes, plant_mode),
+            vp.GasPowerPlant(generation['Fossil gas[MW]'], capacity['Fossil gas[MW]'], step_minutes, plant_mode),
+            vp.BioMassPowerPlant(generation['Biomass[MW]'], capacity['Biomass[MW]'], step_minutes, plant_mode),
+            vp.NuclearPowerPlant(generation['Nuclear[MW]'], capacity['Nuclear[MW]'], step_minutes, plant_mode)
+        ]
 
         # set initial generation
+        initial_generation = 0
         for plant in self.plants:
-            self.state.residual_generation += plant.current_output
+            initial_generation += plant.current_output
+
+        # finally, summarize everything in new state
+        consumption_snapshot = self.consumption_data[self.current_time]
+        self.state = EnergyManagementState(step_no=self.step_counter, timestamp=self.current_time,
+                                           consumption=consumption_snapshot, residual_generation=initial_generation)
 
         return self._obs()  # reward, done, info can't be included
     
     def render(self, mode='human'):
         fig, (energy_ax, feature_ax, reward_ax) = plt.subplots(3, dpi=100, figsize=(8,8))  # (width, height)
         fig.suptitle(f'Energy Management on {str(self.state_history[0].timestamp.date())}')
-        steps = list(range(len(self.state_history)))
+        # all_steps = list(range(len(self.state_history)))
 
         # plot generated energy and load
-        props = ['residual_generation', 'total_load', 'residual_load']
+        props_of_interest = ['residual_generation', 'total_load', 'residual_load']
         energy_values = {}
-        for p in props:
-            values = []
+        for p in props_of_interest:
+            steps, values = [], []
             for state in self.state_history:
-                values.append(getattr(state, p))
-            energy_values[p] = values
+                value = getattr(state, p)
+                if value is not None:
+                    steps.append(state.step_no)
+                    values.append(value)
+            energy_values[p] = (steps, values)
 
-        for label, values in energy_values.items():
+        for label, (steps, values) in energy_values.items():
             energy_ax.plot(steps, values, label=label)
         energy_ax.legend()
         energy_ax.set_title('Electrical Energy')
