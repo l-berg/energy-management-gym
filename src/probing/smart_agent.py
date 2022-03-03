@@ -31,10 +31,10 @@ SB3_PARAMS = {
 # contains all parameters for predefined experiments
 EXPERIMENTS = [{
     "algorithm": "PPO",
-    "steps": 10000,
+    "steps": 150000,
     "sb3_params": {
         "policy": "MlpPolicy",
-        "verbose": 0
+        "verbose": 1
     }
 }, {
     "algorithm": "DQN",
