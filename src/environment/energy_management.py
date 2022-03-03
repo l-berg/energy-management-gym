@@ -92,7 +92,8 @@ class EnergyManagementEnv(gym.Env):
     weather_labels = ['radiation_global', 'wind_speed', 'temperature_air_mean_200']
 
     def __init__(self, episode_length: timedelta = None, step_period: timedelta = None,
-                 start_date: Union[str, datetime] = None, end_date: Union[str, datetime] = None):
+                 start_date: Union[str, datetime] = None, end_date: Union[str, datetime] = None,
+                 wind_output_scale=1, solar_output_scale=1):
         """
         Given dates are interpreted as of timezone 'Europe/Berlin'.
 
@@ -169,6 +170,23 @@ class EnergyManagementEnv(gym.Env):
         self.state = None
         self.plants = []
 
+        self.wind_output_scale = wind_output_scale
+        self.solar_output_scale = solar_output_scale
+
+    def _residual_load_scale(self):
+        """As wind and solar output increase, the residual load shrinks."""
+        consumption = self.consumption_data[self.current_time]
+        generation = self.generation_data[self.current_time]
+
+        original_residual_load = consumption['Residual load[MW]']
+        total_load = consumption['Total (grid load)[MW]']
+
+        wind_gen = (generation['Wind offshore[MW]'] + generation['Wind onshore[MW]']) * self.wind_output_scale
+        solar_gen = generation['Photovoltaics[MW]'] * self.solar_output_scale
+
+        new_residual_load = max(total_load - (wind_gen + solar_gen), 0)
+        return new_residual_load / original_residual_load
+
     def _update_state(self, action):
         """Advance the environment's state by one step."""
         # signal current plant to change output
@@ -185,6 +203,7 @@ class EnergyManagementEnv(gym.Env):
             self.step_counter += 1
             self.sub_step = 0
             consumption_snapshot = self.consumption_data[self.current_time]
+            consumption_snapshot['Residual load[MW]'] *= self._residual_load_scale()
             residual_generation = 0
             for plant in self.plants:
                 residual_generation += plant.step()
@@ -289,7 +308,6 @@ class EnergyManagementEnv(gym.Env):
             )
         return np.array(weather_features, dtype=np.float32)
 
-
     def _obs(self):
         """Extract an observation (=features) from the current state."""
 
@@ -327,6 +345,9 @@ class EnergyManagementEnv(gym.Env):
         generation = self.generation_data[self.current_time]
         capacity = self.capacity_data[self.current_time]
 
+        # residual generation is expected to shrink with residual load
+        generation *= self._residual_load_scale()
+
         step_minutes = self.step_period.total_seconds() / 60
         self.plants = [
             vp.LignitePowerPlant(generation['Lignite[MW]'], capacity['Lignite[MW]'], step_minutes, PLANT_MODE),
@@ -343,6 +364,7 @@ class EnergyManagementEnv(gym.Env):
 
         # finally, summarize everything in new state
         consumption_snapshot = self.consumption_data[self.current_time]
+        consumption_snapshot['Residual load[MW]'] *= self._residual_load_scale()
         self.state = EnergyManagementState(step_no=self.step_counter, timestamp=self.current_time,
                                            consumption=consumption_snapshot, residual_generation=initial_generation)
 
