@@ -10,33 +10,39 @@ def test_inst_log_plant():
     max_capacity = 100
     delta = 0.1
     plant = gm.InstLogPlant(current_output=starting_output, max_capacity=max_capacity)
+
+    # test initial output
     assert plant.step() == starting_output
 
+    # test increasing output
     inc = 5
     for _ in range(inc):
         plant.more(delta)
-
     expected_generation = starting_output * (1+delta)**inc
     assert plant.step() == pytest.approx(expected_generation)
 
+    # test decreasing output
     dec = 7
     for _ in range(dec):
         plant.less(delta)
-
     expected_generation *= (1-delta)**dec
     plant.step()
     assert plant.step() == pytest.approx(expected_generation)
 
+    # test max_capacity
     for _ in range(100):
         plant.more(delta)
     assert plant.step() == max_capacity
 
+    # test decreasing output
     for _ in range(100):
         plant.less(delta)
     assert plant.step() < 0.1*max_capacity
 
 
 def test_load_following_plant():
+    # single mode
+
     initial_output = 500
     max_capacity = 1000
     delta = 0.1
@@ -63,6 +69,12 @@ def test_load_following_plant():
     new_output = plant.step()
     assert new_output == pytest.approx(old_output - output_gradient)
 
+    # test varying output
+    plant.change_output(-delta)
+    old_output = new_output
+    new_output = plant.step()
+    assert new_output == pytest.approx(old_output - output_gradient)
+
     # test output capacity
     for _ in range(100):
         plant.more(delta)
@@ -81,6 +93,28 @@ def test_load_following_plant():
     for _ in range(50):
         plant.step()
     assert plant.step() == pytest.approx(0.9 * max_capacity)
+
+    # group mode
+
+    # test shutdown penalty
+    initial_output = 300
+    max_capacity = 1000
+    delta = 0.2
+    step_size = 5
+    plant = vp.LignitePowerPlant(initial_output, max_capacity, step_size, 'group')
+    plant.more(delta)
+    new_output = plant.step()
+    assert new_output == initial_output + plant.shutdown_penalty * plant.max_output_gradient
+
+    # test crossing min capacity
+    initial_output = 500
+    max_capacity = 1000
+    delta = 0.2
+    step_size = 5
+    plant = vp.LignitePowerPlant(initial_output, max_capacity, step_size, 'group')
+    plant.less(delta)
+    new_output = plant.step()
+    assert new_output == 390
 
 
 def test_storage_plant():

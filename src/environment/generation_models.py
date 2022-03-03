@@ -17,6 +17,13 @@ class PowerPlant:
         """Signal to decrease generation by fraction of max_capacity"""
         pass
 
+    def change_output(self, delta):
+        """Signal to change generation by fraction of max_capacity"""
+        if delta < 0:
+            self.less(-delta)
+        elif delta > 0:
+            self.more(delta)
+
     def set_output(self, new_level):
         """Signal to set output to desired fraction of max_capacity"""
         pass

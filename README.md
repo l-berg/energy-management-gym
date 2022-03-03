@@ -23,11 +23,15 @@ python src/probing/random_agent.py
 ### Train and evaluate
 To probe the environment, first train an agent for 100000 steps with
 ```bash
-python src/probing/smart_agent.py train 100000
+python src/probing/smart_agent.py -a train -s 100000
 ```
 and then evaluate the result after step 100000 by looking at sampled episodes with
 ```bash
-python src/probing/smart_agent.py show 100000
+python src/probing/smart_agent.py -a show -s 100000
+```
+For a list of all options type
+```bash
+python src/probing/smart_agent.py --help
 ```
 
 ### Monitor training progress

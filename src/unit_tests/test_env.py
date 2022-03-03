@@ -58,10 +58,10 @@ def test_stable_baselines_compatibility():
 
 def test_data_coherency():
     def verify_description(basepath):
-        descpath = f'{basepath[:-4]}_description.csv'
+        desc_path = f'{basepath[:-4]}_description.csv'
 
         df = pd.read_csv(basepath, sep=';')
-        desc = pd.read_csv(descpath, sep=';', index_col=0)
+        desc = pd.read_csv(desc_path, sep=';', index_col=0)
         assert np.isclose(df.describe(), desc).all()
 
     verify_description('datasets/generation/generation.csv')

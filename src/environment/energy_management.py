@@ -19,6 +19,7 @@ STEPS_PER_EPISODE = 1 * 24 * 60 / STEP_SIZE
 NUM_ACTIONS = 5
 ACTION_RANGE = 0.05
 RELATIVE_CONTROL = True
+PLANT_MODE = 'group'
 
 
 def time_of_row(row):
@@ -120,15 +121,10 @@ class EnergyManagementEnv(gym.Env):
         """Advance the environment's state by one step."""
         # signal current plant to change output
         if RELATIVE_CONTROL:
-            mid_point = int(NUM_ACTIONS / 2)
-            if action < mid_point:
-                self.plants[self.sub_step].less((ACTION_RANGE / mid_point) * (action + 1))
-            elif action > mid_point:
-                self.plants[self.sub_step].more((ACTION_RANGE / mid_point) * (action - mid_point))
-            elif NUM_ACTIONS % 2 == 0:
-                self.plants[self.sub_step].more((ACTION_RANGE / mid_point))
+            output_delta = action * 2 * ACTION_RANGE / (NUM_ACTIONS - 1) - ACTION_RANGE
+            self.plants[self.sub_step].change_output(output_delta)
         else:
-            self.plants[self.sub_step].set_output(1.0 / NUM_ACTIONS)
+            self.plants[self.sub_step].set_output(action / (NUM_ACTIONS - 1))
 
         self.sub_step += 1
 
@@ -185,7 +181,6 @@ class EnergyManagementEnv(gym.Env):
         portion_of_year = sec_of_year / one_year.total_seconds()
 
         # weekend information
-        # portion_of_week = d.weekday() / 7
         is_weekend = (d.isoweekday() >= 6)  # saturday or sunday (ISO: mon==1, ..., sun==7)
 
         # extract time-of-day information
@@ -205,9 +200,13 @@ class EnergyManagementEnv(gym.Env):
         active_plant[self.sub_step - 1] = 1
 
         # get current output for all plants
-        generation = np.zeros(len(self.plants))
-        for i in range(len(generation)):
-            generation[i] = self.plants[i].target_output / self.plants[i].max_capacity
+        target_outputs = np.zeros(len(self.plants))
+        for i in range(len(target_outputs)):
+            target_outputs[i] = self.plants[i].target_output / self.plants[i].max_capacity
+
+        current_outputs = np.zeros(len(self.plants))
+        for i in range(len(current_outputs)):
+            current_outputs[i] = self.plants[i].current_output / self.plants[i].max_capacity
 
         # construct feature vector
         w0 = 2*np.pi
@@ -220,7 +219,8 @@ class EnergyManagementEnv(gym.Env):
             residual_load_norm,
             residual_gen_norm,
         ], dtype=np.float32)
-        obs = np.append(obs, generation)
+        #obs = np.append(obs, target_outputs)
+        obs = np.append(obs, current_outputs)
         obs = np.append(obs, active_plant)
 
         if self.sub_step == 0:
@@ -247,17 +247,16 @@ class EnergyManagementEnv(gym.Env):
             if time_of_row(self.capacity_table.loc[r]).year == current_year:
                 capacity_row = self.capacity_table.loc[r]
         step_time = 60 / STEP_SIZE
-        plant_mode = 'group'
         self.plants = [vp.LignitePowerPlant(generation_row['Lignite[MWh]'],
-                                            capacity_row['Lignite[MW]'] / step_time, STEP_SIZE, plant_mode),
+                                            capacity_row['Lignite[MW]'] / step_time, STEP_SIZE, PLANT_MODE),
                        vp.HardCoalPowerPlant(generation_row['Hard coal[MWh]'],
-                                             capacity_row['Hard coal[MW]'] / step_time, STEP_SIZE, plant_mode),
+                                             capacity_row['Hard coal[MW]'] / step_time, STEP_SIZE, PLANT_MODE),
                        vp.GasPowerPlant(generation_row['Fossil gas[MWh]'],
-                                        capacity_row['Fossil gas[MW]'] / step_time, STEP_SIZE, plant_mode),
+                                        capacity_row['Fossil gas[MW]'] / step_time, STEP_SIZE, PLANT_MODE),
                        vp.BioMassPowerPlant(generation_row['Biomass[MWh]'],
-                                            capacity_row['Biomass[MW]'] / step_time, STEP_SIZE, plant_mode),
+                                            capacity_row['Biomass[MW]'] / step_time, STEP_SIZE, PLANT_MODE),
                        vp.NuclearPowerPlant(generation_row['Nuclear[MWh]'],
-                                            capacity_row['Nuclear[MW]'] / step_time, STEP_SIZE, plant_mode)]
+                                            capacity_row['Nuclear[MW]'] / step_time, STEP_SIZE, PLANT_MODE)]
 
         # set initial generation
         for plant in self.plants:
@@ -276,7 +275,7 @@ class EnergyManagementEnv(gym.Env):
         for p in props:
             values = []
             for state in self.state_history:
-                values.append(getattr(state, p))
+                values.append(getattr(state, p) / 1000)
             energy_values[p] = values
 
         for label, values in energy_values.items():
@@ -314,6 +313,7 @@ class EnergyManagementEnv(gym.Env):
             'biomass gen': True,
             'nuclear gen': True
         }
+        # plot observations
         feature_steps = []
         feature_list = []
         for state in self.state_history:

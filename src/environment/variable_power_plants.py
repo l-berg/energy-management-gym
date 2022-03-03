@@ -23,13 +23,29 @@ class LoadFollowingPowerPlant(PowerPlant):
 
     def step(self):
         """Updates power output based on power target, returns current output"""
-        penalty = 1.0
-        if self.mode == 'group' and self.current_output < self.min_capacity:
-            penalty = self.shutdown_penalty
-        if abs(self.current_output - self.target_output) <= self.max_output_gradient * penalty:
-            self.current_output = self.target_output
-        else:
-            self.current_output += self.max_output_gradient * penalty * sign(self.target_output - self.current_output)
+        # calculate portion of time spend above and below min capacity
+        part_below_min = 0
+        part_above_min = 0
+        if self.current_output <= self.min_capacity and self.target_output <= self.min_capacity:
+            part_below_min = 1
+        elif self.current_output <= self.min_capacity <= self.target_output:
+            part_below_min = min((self.min_capacity - self.current_output) /
+                                 (self.max_output_gradient * self.shutdown_penalty), 1)
+            part_above_min = 1 - part_below_min
+        elif self.current_output >= self.min_capacity and self.target_output >= self.min_capacity:
+            part_above_min = 1
+        elif self.current_output >= self.min_capacity >= self.target_output:
+            part_above_min = min((self.current_output - self.min_capacity) / self.max_output_gradient, 1)
+            part_below_min = 1 - part_above_min
+
+        # calculate actual output by combining change with and without shutdown penalty
+        desired_output = self.current_output + sign(self.target_output - self.current_output) * \
+                         self.max_output_gradient * (part_above_min + part_below_min * self.shutdown_penalty)
+
+        if abs(desired_output - self.current_output) > abs(self.target_output - self.current_output):
+            desired_output = self.target_output
+
+        self.current_output = desired_output
         return self.current_output
 
     def more(self, delta):
@@ -54,7 +70,7 @@ class LoadFollowingPowerPlant(PowerPlant):
 class LignitePowerPlant(LoadFollowingPowerPlant):
     def __init__(self, initial_output, max_capacity, step_size, mode):
         super().__init__(initial_output, max_capacity, step_size, 0.4 * max_capacity, 0.04, 0.78, mode, 0.1)
-        
+
 
 class HardCoalPowerPlant(LoadFollowingPowerPlant):
     def __init__(self, initial_output, max_capacity, step_size, mode):
@@ -69,13 +85,11 @@ class GasPowerPlant(LoadFollowingPowerPlant):
 
 class NuclearPowerPlant(LoadFollowingPowerPlant):
     def __init__(self, initial_output, max_capacity, step_size, mode):
-        # TODO CO2 emissions for uranium mining
         super().__init__(initial_output, max_capacity, step_size, 0.5 * max_capacity, 0.05, 0.0, mode, 0.5)
 
 
 class BioMassPowerPlant(LoadFollowingPowerPlant):
     def __init__(self, initial_output, max_capacity, step_size, mode):
-        # TODO CO2 emissions for producing biomass
         super().__init__(initial_output, max_capacity, step_size, 0.2 * max_capacity, 0.2, 0.0, mode, 0.9)
 
 
