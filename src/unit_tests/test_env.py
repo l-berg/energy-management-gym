@@ -124,4 +124,11 @@ def test_data_samples():
     assert env.consumption_data[env.current_time]['Residual load[MW]'] == pytest.approx(((2/3)*5210 + (1/3)*4940) * 4)
 
 
+def test_residual_load_scale():
+    env = em.EnergyManagementEnv()
+    env.reset()
+    assert env._residual_load_scale() == pytest.approx(1.0)
+    for _ in range(20):
+        env.step(0)
+    assert env._residual_load_scale() == pytest.approx(1.0)
 
