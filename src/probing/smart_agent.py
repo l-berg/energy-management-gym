@@ -1,6 +1,7 @@
 # https://pythonprogramming.net/saving-and-loading-reinforcement-learning-stable-baselines-3-tutorial/ TODO
 # Energy for 100k steps: 50312 J ~ 14Wh
 
+
 import src.environment.energy_management as em
 
 import gym
@@ -11,6 +12,7 @@ from pathlib import Path
 import argparse
 import math
 import time
+from src.probing.experiments import EXPERIMENTS
 
 parser = argparse.ArgumentParser()
 parser.add_argument("-m", "--mode", choices=["auto", "manual"], default="manual",
@@ -28,26 +30,10 @@ SB3_PARAMS = {
     "policy": "MlpPolicy",
     "verbose": 1
 }
-# contains all parameters for predefined experiments
-EXPERIMENTS = [{
-    "algorithm": "PPO",
-    "steps": 150000,
-    "sb3_params": {
-        "policy": "MlpPolicy",
-        "verbose": 1
-    }
-}, {
-    "algorithm": "DQN",
-    "steps": 300000,
-    "sb3_params": {
-        "policy": "MlpPolicy",
-        "verbose": 1
-    }
-}]
 
 
 def train():
-    env = em.EnergyManagementEnv()
+    env = em.EnergyManagementEnv(**env_params)
     mean_rewards = []
     reward_stds = []
     for seed in seeds:
@@ -59,9 +45,9 @@ def train():
 
         env.reset(seed=seed)
         if algorithm == "PPO":
-            model = PPO(**model_params, env=env, tensorboard_log=log_seed_dir, seed=seed)
+            model = PPO(**model_params, verbose=1, env=env, tensorboard_log=log_seed_dir, seed=seed)
         elif algorithm == "DQN":
-            model = DQN(**model_params, env=env, tensorboard_log=log_seed_dir, seed=seed)
+            model = DQN(**model_params, verbose=1,env=env, tensorboard_log=log_seed_dir, seed=seed)
 
         # train model
         TIMESTEPS = 10000
@@ -81,7 +67,7 @@ def train():
 
 
 def visualize():
-    env = em.EnergyManagementEnv()
+    env = em.EnergyManagementEnv(**env_params)
     env.reset()  # do not seed so we can call it multiple times
 
     model_path = f"{models_dir}/{steps}.zip"
@@ -109,6 +95,7 @@ if __name__ == '__main__':
     algorithm = args.algorithm
     steps = args.steps
     model_params = SB3_PARAMS
+    env_params = {}
     if args.mode == "auto":
         if args.experiment == -1:
             print("Error: Please specify an experiment to run!")
@@ -119,6 +106,7 @@ if __name__ == '__main__':
         models_dir += f"/{args.experiment}"
         log_dir += f"/{args.experiment}"
         model_params = experiment["sb3_params"]
+        env_params = experiment["env_params"]
     elif args.seed:
         seeds = [args.seed]
 

@@ -15,11 +15,6 @@ from datetime import datetime, timedelta
 import pytz as tz
 import matplotlib.pyplot as plt
 
-STEP_SIZE = 15
-STEPS_PER_EPISODE = 1 * 24 * 60 / STEP_SIZE
-NUM_ACTIONS = 5
-ACTION_RANGE = 0.05
-RELATIVE_CONTROL = True
 PLANT_MODE = 'group'
 
 
@@ -92,7 +87,10 @@ class EnergyManagementEnv(gym.Env):
     weather_labels = ['radiation_global', 'wind_speed', 'temperature_air_mean_200']
 
     def __init__(self, episode_length: timedelta = None, step_period: timedelta = None,
-                 start_date: Union[str, datetime] = None, end_date: Union[str, datetime] = None):
+                 start_date: Union[str, datetime] = None, end_date: Union[str, datetime] = None,
+                 use_residual_load=True, use_weather_data=True, use_time_data=True,
+                 relative_control=True, num_actions=5, action_range=0.05, solar_output_scale=1,
+                 wind_output_scale=1, output_diff_scale=3):
         """
         Given dates are interpreted as of timezone 'Europe/Berlin'.
 
@@ -139,7 +137,7 @@ class EnergyManagementEnv(gym.Env):
         if self.episodes_in_interval * self.episode_length != self.end_date - self.start_date:
             print(f'Warning: Episode length {self.episode_length} does not evenly divide chosen interval from {self.start_date} to {self.end_date}')
 
-        self.action_space = spaces.Discrete(NUM_ACTIONS)
+        self.action_space = spaces.Discrete(num_actions)
 
         float_max = np.finfo(np.float32).max
         high = np.array([
@@ -169,14 +167,25 @@ class EnergyManagementEnv(gym.Env):
         self.state = None
         self.plants = []
 
+        # settings for experiments
+        self.use_residual_load = use_residual_load
+        self.use_weather_data = use_weather_data
+        self.use_time_data = use_time_data
+        self.relative_control = relative_control
+        self.num_actions = num_actions
+        self.action_range = action_range
+        self.solar_output_scale = solar_output_scale
+        self.wind_output_scale = wind_output_scale
+        self.output_diff_scale = output_diff_scale
+
     def _update_state(self, action):
         """Advance the environment's state by one step."""
         # signal current plant to change output
-        if RELATIVE_CONTROL:
-            output_delta = action * 2 * ACTION_RANGE / (NUM_ACTIONS - 1) - ACTION_RANGE
+        if self.relative_control:
+            output_delta = action * 2 * self.action_range / (self.num_actions - 1) - self.action_range
             self.plants[self.sub_step].change_output(output_delta)
         else:
-            self.plants[self.sub_step].set_output(action / (NUM_ACTIONS - 1))
+            self.plants[self.sub_step].set_output(action / (self.num_actions - 1))
 
         self.sub_step += 1
         # only update state after all plants have been updated
@@ -202,12 +211,12 @@ class EnergyManagementEnv(gym.Env):
 
         # calculate reward
         max_cost = max(list(p.price_per_mwh for p in self.plants))
-        diff = (self.state.residual_generation - self.state.residual_load) / 10000.0  # [diff] = GWh
+        diff = (self.state.residual_generation - self.state.residual_load) / 10000.0
         reward = max_cost * self.state.residual_load / 10000.0
         for plant in self.plants:
             reward -= plant.get_costs() / 10000.0
         if diff < 0:
-            reward += 3 * diff * max_cost
+            reward += self.output_diff_scale * diff * max_cost
         else:
             reward -= diff * max_cost
 
@@ -246,6 +255,8 @@ class EnergyManagementEnv(gym.Env):
             np.cos(w0 * portion_of_day),
             is_weekend
         ], dtype=np.float32)
+        if not self.use_time_data:
+            return np.zeros_like(obs)
         return obs
 
     def _energy_obs(self):
@@ -263,12 +274,17 @@ class EnergyManagementEnv(gym.Env):
         for i in range(len(current_outputs)):
             current_outputs[i] = self.plants[i].current_output / self.plants[i].max_capacity
 
+        if not self.use_residual_load:
+            residual_load_norm = np.zeros_like(residual_load_norm)
         obs = np.array([residual_load_norm, residual_gen_norm], dtype=np.float32)
         obs = np.append(obs, current_outputs)
         return obs
 
     def _weather_obs(self, time_offset=None):
         """Build weather data into observation."""
+        if not self.use_weather_data:
+            return np.zeros(2 * len(self.weather_labels))
+
         if time_offset is not None:
             d = self.current_time + time_offset
         else:
@@ -288,7 +304,6 @@ class EnergyManagementEnv(gym.Env):
                 (current_std[label] - self.weather_std.mean[label]) / (self.weather_std.std[label] + eps)
             )
         return np.array(weather_features, dtype=np.float32)
-
 
     def _obs(self):
         """Extract an observation (=features) from the current state."""
@@ -404,7 +419,7 @@ class EnergyManagementEnv(gym.Env):
             feature_ax.legend()
             feature_ax.set_title(f'{name} Observation')
         plot_mat(ax[0, 1], energy_labels, feature_mat, 'Energy')
-        plot_mat(ax[1, 1], time_labels, feature_mat[len(energy_labels):], 'Energy')
+        plot_mat(ax[1, 1], time_labels, feature_mat[len(energy_labels):], 'Time')
 
         # weather observations (only now, not forecast)
         for i, l in enumerate(self.weather_labels):

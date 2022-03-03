@@ -1,5 +1,12 @@
 # Energy Management Gym
 
+OpenAI Gym compatible environment that simulates the control of different
+types of power plants by the agent. The reward depends on the total CO2 output of all
+power plants and the deviation from the so-called residual load. The residual load is
+the power output of renewable energy sources subtracted from the total load on the grid.
+Data for all power grid and weather related information corresponds to the real
+world data from Germany between 2015 and 2021.
+
 ## Installation
 We use [anaconda](https://www.anaconda.com/products/individual) to manage dependencies.
 ```bash
@@ -29,6 +36,10 @@ and then evaluate the result after step 100000 by looking at sampled episodes wi
 ```bash
 python src/probing/smart_agent.py -a show -s 100000
 ```
+To run pre-defined experiment number n, type
+```bash
+python src/probing/smart_agent.py -m auto -e <n> -a train
+```
 For a list of all options type
 ```bash
 python src/probing/smart_agent.py --help
@@ -36,7 +47,12 @@ python src/probing/smart_agent.py --help
 
 ### Monitor training progress
 Training may take some time and the final agent may not be the best one yet.
-Use tensorboard to monitor the reward over time:
+Use tensorboard to monitor the reward over time.
+The current logging directory will be printed to the console, i.e.
 ```bash
-tensorboard --logdir=tensorboard_logs
+Logging to tensorboard_logs/auto/1/42/PPO_0
+```
+To run tensorboard, type
+```bash
+tensorboard --logdir=<LOGDIR>
 ```
