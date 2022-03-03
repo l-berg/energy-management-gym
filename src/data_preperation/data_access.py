@@ -19,6 +19,8 @@ class DataWrapper(ABC):
         else:
             dt_before = self.data.index[self.data.index.get_indexer([dt], method='ffill')[0]]
             dt_after = self.data.index[self.data.index.get_indexer([dt], method='backfill')[0]]
+            if dt_after == dt_before:
+                return self.data.loc[dt_before]
             w = (dt - dt_before) / (dt_after - dt_before)
             return (1-w) * self.data.loc[dt_before] + w * self.data.loc[dt_after]
 
