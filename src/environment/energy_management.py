@@ -43,7 +43,8 @@ class EnergyManagementEnv(gym.Env):
 
     This environment allows an agent to control the power output of different sources
     (lignite, hard coal, fossil gas, biomass and nuclear) with the goal to meet
-    the residual load, which is the total grid load minus output of wind and solar.
+    the residual load, which is the total grid load minus output of wind and solar,
+    and minimize CO2 emissions.
 
     The observations of load and weather are read from a database of real-world data
     of Germany from 2015-2021. Energy production is simulated by using one 'plant' per
@@ -248,6 +249,7 @@ class EnergyManagementEnv(gym.Env):
                 self.total_underproduction += abs(diff) * part_of_hour
 
     def step(self, action):
+        """Takes the specified action and advances the environment by one step"""
         err_msg = f"{action!r} ({type(action)}) invalid"
         assert self.action_space.contains(action), err_msg
         assert self.state is not None, "Call reset before using step method."
@@ -372,10 +374,7 @@ class EnergyManagementEnv(gym.Env):
         return obs
 
     def reset(self, seed=None):
-        """
-            Reset the environment
-            Has to be called before using it
-        """
+        """Reset the environment, has to be called after initialization"""
         if seed is not None:
             self.seed(seed)
 
