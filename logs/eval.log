@@ -1,7 +1,7 @@
 """
     CPU: AMD Ryzen 5900x
     GPU: Nvidia Geforce RTX2070
-    Energy for running all experiments: ~1.07KWh
+    Energy for training on all experiments: ~1.16KWh
 """
 
 
@@ -65,6 +65,15 @@ mean 1290.8379602 | std 155.59341074054183
 Evaluation results:
 mean reward 1207.86506 | reward std 180.6004
 Took 54.3s to run
+
+
+# experiment 7, steps 150000
+mean 478.2889204 | std 272.58576577590173
+mean 298.3420913 | std 199.3667387086763
+mean 455.6361677 | std 275.49246610798735
+Evaluation results:
+mean reward 410.75573 | reward std 233.86102
+Took 55.0s to run
 
 
 # experiment 8, steps 150000
