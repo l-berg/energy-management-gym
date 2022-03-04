@@ -78,3 +78,5 @@ tensorboard --logdir=<LOGDIR>
 ## Data sources
 * German electrical grid load, consumption and installed capacity: [Bundesnetzagentur](https://www.bundesnetzagentur.de/), aquired using platform [smard](https://www.smard.de/en/downloadcenter/download-market-data)
 * German weather: [Deutscher Wetterdienst](https://www.dwd.de/), aquired using the third party python library [wetterdienst](https://github.com/earthobservations/wetterdienst)
+* Information on Emissions: [Umweltbundesamt](https://www.umweltbundesamt.de/sites/default/files/medien/1410/publikationen/171207_uba_hg_braunsteinkohle_bf.pdf)
+* Power plant reaction times: [BDI](https://web.archive.org/web/20150923183021/http://www.bdi.eu/download_content/EnergieUndRohstoffe/Hundt16022010.pdf)
