@@ -3,7 +3,6 @@
 
 
 import src.environment.energy_management as em
-
 import gym
 from stable_baselines3 import PPO
 from stable_baselines3 import DQN
@@ -19,7 +18,7 @@ parser.add_argument("-m", "--mode", choices=["auto", "manual"], default="manual"
                     help="Use auto in combination with a predefined experiment or manually set parameters")
 parser.add_argument('-a', '--action', choices=['train', 'show'],
                     help='Train from scratch or visualize existing checkpoint')
-parser.add_argument("-e", "--experiment", type=int, choices=[0, 1], default=-1, help="Predefined experiment to run")
+parser.add_argument("-e", "--experiment", type=int, choices=list(range(11)), default=-1, help="Predefined experiment to run")
 parser.add_argument('-s', '--steps', type=int, default=100000)
 parser.add_argument("-S", "--seed", type=int, help="Seed used for the environment")
 parser.add_argument("-A", "--algorithm", choices=["PPO", "DQL"], default="PPO",
@@ -28,7 +27,6 @@ args = parser.parse_args()
 # default parameters
 SB3_PARAMS = {
     "policy": "MlpPolicy",
-    "verbose": 1
 }
 
 
@@ -47,7 +45,7 @@ def train():
         if algorithm == "PPO":
             model = PPO(**model_params, verbose=1, env=env, tensorboard_log=log_seed_dir, seed=seed)
         elif algorithm == "DQN":
-            model = DQN(**model_params, verbose=1,env=env, tensorboard_log=log_seed_dir, seed=seed)
+            model = DQN(**model_params, verbose=1, env=env, tensorboard_log=log_seed_dir, seed=seed)
 
         # train model
         TIMESTEPS = 10000

@@ -177,6 +177,10 @@ class EnergyManagementEnv(gym.Env):
         self.solar_output_scale = solar_output_scale
         self.wind_output_scale = wind_output_scale
         self.output_diff_scale = output_diff_scale
+        if wind_output_scale != 1 or solar_output_scale != 1:
+            self.scale_renewables=True
+        else:
+            self.scale_renewables=False
 
     def _residual_load_scale(self):
         """As wind and solar output increase, the residual load shrinks."""
@@ -190,7 +194,7 @@ class EnergyManagementEnv(gym.Env):
         solar_gen = generation['Photovoltaics[MW]'] * self.solar_output_scale
 
         new_residual_load = max(total_load - (wind_gen + solar_gen), 0)
-        return new_residual_load / original_residual_load
+        return new_residual_load
 
     def _update_state(self, action):
         """Advance the environment's state by one step."""
@@ -208,7 +212,8 @@ class EnergyManagementEnv(gym.Env):
             self.step_counter += 1
             self.sub_step = 0
             consumption_snapshot = self.consumption_data[self.current_time]
-            consumption_snapshot['Residual load[MW]'] *= self._residual_load_scale()
+            if self.scale_renewables:
+                consumption_snapshot['Residual load[MW]'] = self._residual_load_scale()
             residual_generation = 0
             for plant in self.plants:
                 residual_generation += plant.step()
@@ -358,7 +363,8 @@ class EnergyManagementEnv(gym.Env):
         capacity = self.capacity_data[self.current_time]
 
         # residual generation is expected to shrink with residual load
-        generation *= self._residual_load_scale()
+        if self.scale_renewables:
+            generation *= self._residual_load_scale()
 
         step_minutes = self.step_period.total_seconds() / 60
         self.plants = [
@@ -376,7 +382,8 @@ class EnergyManagementEnv(gym.Env):
 
         # finally, summarize everything in new state
         consumption_snapshot = self.consumption_data[self.current_time]
-        consumption_snapshot['Residual load[MW]'] *= self._residual_load_scale()
+        if self.scale_renewables:
+            consumption_snapshot['Residual load[MW]'] *= self._residual_load_scale()
         self.state = EnergyManagementState(step_no=self.step_counter, timestamp=self.current_time,
                                            consumption=consumption_snapshot, residual_generation=initial_generation)
 

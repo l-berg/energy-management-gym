@@ -133,8 +133,8 @@ EXPERIMENTS = [{
         "policy": "MlpPolicy"
     },
     "env_params": {
-        "solar_output_scale": 3,
-        "wind_output_scale": 3
+        "solar_output_scale": 4,
+        "wind_output_scale": 1.5
     }
 }, {
     # experiment 8 - use 5 minute time intervalls for env step
