@@ -496,12 +496,6 @@ class EnergyManagementEnv(gym.Env):
         reward_ax.set_ylabel('reward')
         reward_ax.set_title('Rewards/Actions')
 
-        action_color = 'green'
-        action_ax = reward_ax.twinx()
-        action_ax.set_ylabel('action', color=action_color)
-        action_ax.scatter(action_steps, action_values, label='action', color=action_color, marker='x')
-        action_ax.tick_params(axis='y', labelcolor=action_color)
-
         total_reward = 0
         for state in self.state_history:
             total_reward += state.reward
@@ -515,7 +509,7 @@ class EnergyManagementEnv(gym.Env):
         stats_text += f'Timespan: {str(self.step_period * self.step_counter)}\n\n'
         stats_text += f'Total Reward: {total_reward:.1f}'
         stats_ax.text(0, 0.5, stats_text, ha='left', ma='left', va='center',
-                      family='monospace', size=14, transform=stats_ax.transAxes)
+                      family='monospace', size=12, transform=stats_ax.transAxes)
 
         fig.tight_layout()
         plt.show()
