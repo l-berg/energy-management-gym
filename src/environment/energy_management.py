@@ -167,6 +167,12 @@ class EnergyManagementEnv(gym.Env):
         self.state = None
         self.plants = []
 
+        # init episode stats
+        self.total_production = 0
+        self.total_co2_emissions = 0
+        self.total_overproduction = 0
+        self.total_underproduction = 0
+
         # settings for experiments
         self.use_residual_load = use_residual_load
         self.use_weather_data = use_weather_data
@@ -219,6 +225,17 @@ class EnergyManagementEnv(gym.Env):
                 residual_generation += plant.step()
             self.state = EnergyManagementState(step_no=self.step_counter, timestamp=self.current_time,
                                                consumption=consumption_snapshot, residual_generation=residual_generation)
+            # increment totals
+            part_of_hour = self.step_period.total_seconds() / 3600
+            for plant in self.plants:
+                self.total_co2_emissions += plant.get_costs() * part_of_hour
+
+            self.total_production += self.state.residual_generation * part_of_hour
+            diff = self.state.residual_generation - self.state.residual_load
+            if diff > 0:
+                self.total_overproduction += abs(diff) * part_of_hour
+            else:
+                self.total_underproduction += abs(diff) * part_of_hour
 
     def step(self, action):
         err_msg = f"{action!r} ({type(action)}) invalid"
@@ -354,6 +371,11 @@ class EnergyManagementEnv(gym.Env):
         self.sub_step = 0
         self.state_history = []
 
+        self.total_production = 0
+        self.total_co2_emissions = 0
+        self.total_overproduction = 0
+        self.total_underproduction = 0
+
         # random starting time
         episode_no = self.random_generator.integers(self.episodes_in_interval)
         self.current_time = self.start_date + episode_no * self.episode_length
@@ -412,6 +434,7 @@ class EnergyManagementEnv(gym.Env):
         for label, (steps, values) in energy_values.items():
             energy_ax.plot(steps, values, label=label)
         energy_ax.legend()
+        energy_ax.set_ylabel('power [GW]')
         energy_ax.set_title('Electrical Energy')
 
         # plot observations
@@ -478,6 +501,21 @@ class EnergyManagementEnv(gym.Env):
         action_ax.set_ylabel('action', color=action_color)
         action_ax.scatter(action_steps, action_values, label='action', color=action_color, marker='x')
         action_ax.tick_params(axis='y', labelcolor=action_color)
+
+        total_reward = 0
+        for state in self.state_history:
+            total_reward += state.reward
+        stats_ax = ax[2, 0]
+        stats_ax.set_axis_off()
+        stats_text = ''
+        stats_text += f'Total production:    {self.total_production/1000 :6.1f} GWh\n'
+        stats_text += f'    Overproduction:  {self.total_overproduction/1000 :6.1f} GWh\n'
+        stats_text += f'    Underproduction: {self.total_underproduction/1000 :6.1f} GWh\n'
+        stats_text += f'Total CO2 emissions: {self.total_co2_emissions/1000 :6.1f} kt\n\n'
+        stats_text += f'Timespan: {str(self.step_period * self.step_counter)}\n\n'
+        stats_text += f'Total Reward: {total_reward:.1f}'
+        stats_ax.text(0, 0.5, stats_text, ha='left', ma='left', va='center',
+                      family='monospace', size=14, transform=stats_ax.transAxes)
 
         fig.tight_layout()
         plt.show()
