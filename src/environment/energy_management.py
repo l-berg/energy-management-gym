@@ -494,7 +494,7 @@ class EnergyManagementEnv(gym.Env):
 
         reward_ax.plot(reward_steps, reward_values, label='reward')
         reward_ax.set_ylabel('reward')
-        reward_ax.set_title('Rewards/Actions')
+        reward_ax.set_title('Rewards')
 
         total_reward = 0
         for state in self.state_history:
