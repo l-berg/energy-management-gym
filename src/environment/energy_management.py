@@ -40,7 +40,18 @@ class EnergyManagementState:
 
 class EnergyManagementEnv(gym.Env):
     """Custom Environment that follows gym interface.
-    Note, that all episodes start at 00:00 CET, but time features use CEST when appropriate. (12 AM becomes 1 AM)
+
+    This environment allows an agent to control the power output of different sources
+    (lignite, hard coal, fossil gas, biomass and nuclear) with the goal to meet
+    the residual load, which is the total grid load minus output of wind and solar.
+
+    The observations of load and weather are read from a database of real-world data
+    of Germany from 2015-2021. Energy production is simulated by using one 'plant' per
+    source and summing their outputs. The plant models include co2-characteristics,
+    delays, power-on time and total capacity.
+
+    The plants are controlled one at a time and only after all plants have been adjusted
+    does the environment advance to the next time-step.
 
     ### Observation space
     00 | current energy residual load
