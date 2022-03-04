@@ -184,9 +184,9 @@ class EnergyManagementEnv(gym.Env):
         self.wind_output_scale = wind_output_scale
         self.output_diff_scale = output_diff_scale
         if wind_output_scale != 1 or solar_output_scale != 1:
-            self.scale_renewables=True
+            self.scale_renewables = True
         else:
-            self.scale_renewables=False
+            self.scale_renewables = False
 
     def _residual_load_scale(self):
         """As wind and solar output increase, the residual load shrinks."""
