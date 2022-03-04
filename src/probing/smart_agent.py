@@ -146,6 +146,7 @@ if __name__ == '__main__':
         models_dir += f"/{seed}"
         visualize()
     else:
+        steps = args.steps
         evaluate()
     time_end = time.time()
     print(f"Took {round(time_end - time_start, 1)}s to run")
