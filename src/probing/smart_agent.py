@@ -3,7 +3,6 @@
 import numpy as np
 
 import src.environment.energy_management as em
-import gym
 from stable_baselines3 import PPO
 from stable_baselines3 import DQN
 from stable_baselines3.common.evaluation import evaluate_policy
@@ -12,14 +11,14 @@ import argparse
 import math
 import time
 from src.probing.experiments import EXPERIMENTS
-import pickle
 
 parser = argparse.ArgumentParser()
 parser.add_argument("-m", "--mode", choices=["auto", "manual"], default="manual",
                     help="Use auto in combination with a predefined experiment or manually set parameters")
 parser.add_argument('-a', '--action', choices=['train', 'show', 'eval'],
                     help='Train from scratch or visualize existing checkpoint or evaluate results')
-parser.add_argument("-e", "--experiment", type=int, choices=list(range(11)), default=-1, help="Predefined experiment to run")
+parser.add_argument("-e", "--experiment", type=int, choices=list(range(11)), default=-1,
+                    help="Predefined experiment to run")
 parser.add_argument('-s', '--steps', type=int, default=100000)
 parser.add_argument("-S", "--seed", type=int, help="Seed used for the environment")
 parser.add_argument("-A", "--algorithm", choices=["PPO", "DQL"], default="PPO",
@@ -29,6 +28,7 @@ args = parser.parse_args()
 SB3_PARAMS = {
     "policy": "MlpPolicy",
 }
+TIME_STEPS = 10000
 
 
 def train():
@@ -50,11 +50,10 @@ def train():
             model = DQN(**model_params, verbose=1, env=env, tensorboard_log=log_seed_dir, seed=seed)
 
         # train model
-        TIMESTEPS = 10000
-        max_iterations = math.ceil(steps / TIMESTEPS)
+        max_iterations = math.ceil(steps / TIME_STEPS)
         for i in range(1, max_iterations+1):
-            model.learn(total_timesteps=TIMESTEPS, reset_num_timesteps=False, tb_log_name=algorithm)
-            model.save(f"{models_seed_dir}/{TIMESTEPS*i}")
+            model.learn(total_timesteps=TIME_STEPS, reset_num_timesteps=False, tb_log_name=algorithm)
+            model.save(f"{models_seed_dir}/{TIME_STEPS * i}")
 
         # evaluate model
         mean_reward, std_reward = evaluate_policy(model, model.get_env(), n_eval_episodes=5)
