@@ -1,11 +1,6 @@
 # Energy Management Gym
 
-OpenAI Gym compatible environment that simulates the control of different
-types of power plants by the agent. The reward depends on the total CO2 output of all
-power plants and the deviation from the so-called residual load. The residual load is
-the power output of renewable energy sources subtracted from the total load on the grid.
-Data for all power grid and weather related information corresponds to the real
-world data from Germany between 2015 and 2021.
+OpenAI [Gym](https://github.com/openai/gym) compatible environment that simulates global management of different power sources and incorporates real-world data.
 
 ## Description
 <p align="center">
@@ -13,6 +8,8 @@ world data from Germany between 2015 and 2021.
 </p>
 
 This environment allows an agent to control the power output of different sources (lignite, hard coal, fossil gas, biomass and nuclear) with the goal to meet the residual load, which is the total grid load minus output of wind and solar.
+
+The reward is computed using the total CO2 output of all power plants and the deviation from the residual load.
 
 The observations of load and weather are read from a database of real-world data of Germany from 2015-2021.
 Energy production is simulated by using one 'plant' per
