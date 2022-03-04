@@ -128,8 +128,8 @@ def test_data_samples():
 def test_residual_load_scale():
     env = em.EnergyManagementEnv()
     env.reset()
-    assert env._residual_load_scale() == pytest.approx(1.0)
+    assert env._residual_load_scale() == pytest.approx(1.0, 2)
     for _ in range(20):
         env.step(0)
-    assert env._residual_load_scale() == pytest.approx(1.0)
+    assert env._residual_load_scale() == pytest.approx(1.0, 2)
 
