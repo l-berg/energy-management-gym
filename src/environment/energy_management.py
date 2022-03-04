@@ -3,11 +3,10 @@ import dataclasses
 import gym
 from gym import spaces
 
-from src.environment.generation_models import InstLogPlant
 import src.environment.variable_power_plants as vp
 from src.data_preperation.data_access import EnergyData, WeatherData
 
-from typing import Optional, List, Union
+from typing import Union
 from dataclasses import dataclass
 import numpy as np
 import pandas as pd
@@ -199,8 +198,8 @@ class EnergyManagementEnv(gym.Env):
         wind_gen = (generation['Wind offshore[MW]'] + generation['Wind onshore[MW]']) * self.wind_output_scale
         solar_gen = generation['Photovoltaics[MW]'] * self.solar_output_scale
 
-        new_residual_load = max(total_load - (wind_gen + solar_gen), 0)
-        return new_residual_load
+        new_residual_load = max(total_load - (wind_gen + solar_gen), 1)
+        return new_residual_load / original_residual_load
 
     def _update_state(self, action):
         """Advance the environment's state by one step."""
@@ -219,7 +218,7 @@ class EnergyManagementEnv(gym.Env):
             self.sub_step = 0
             consumption_snapshot = self.consumption_data[self.current_time]
             if self.scale_renewables:
-                consumption_snapshot['Residual load[MW]'] = self._residual_load_scale()
+                consumption_snapshot['Residual load[MW]'] *= self._residual_load_scale()
             residual_generation = 0
             for plant in self.plants:
                 residual_generation += plant.step()
@@ -298,7 +297,6 @@ class EnergyManagementEnv(gym.Env):
 
     def _energy_obs(self):
         """Build residuals and generation into observation."""
-
         # normalize energy totals
         eps = np.finfo(np.float32).eps.item()
         residual_load_norm = (self.state.residual_load - self.consumption_data.mean['Residual load[MW]']
@@ -344,7 +342,6 @@ class EnergyManagementEnv(gym.Env):
 
     def _obs(self):
         """Extract an observation (=features) from the current state."""
-
         # collect observations
         energy_obs = self._energy_obs()
         time_obs = self._time_obs()
@@ -364,6 +361,10 @@ class EnergyManagementEnv(gym.Env):
         return obs
 
     def reset(self, seed=None):
+        """
+            Reset the environment
+            Has to be called before using it
+        """
         if seed is not None:
             self.seed(seed)
 
@@ -412,12 +413,12 @@ class EnergyManagementEnv(gym.Env):
         return self._obs()  # reward, done, info can't be included
 
     def render(self, mode='human'):
-        fig, ax= plt.subplots(nrows=3, ncols=2, sharex=True, dpi=100, figsize=(16,8))  # (width, height)
+        """Displays various aspects of the environment as graphs using matplotlib"""
+        fig, ax = plt.subplots(nrows=3, ncols=2, sharex=True, dpi=100, figsize=(16, 8))  # (width, height)
         energy_ax = ax[0, 0]
         reward_ax = ax[1, 0]
         episode_start = self.state_history[0].timestamp.astimezone(self.obs_timezone).replace(tzinfo=None)
         fig.suptitle(f'Energy Management starting {str(episode_start)}')
-        # all_steps = list(range(len(self.state_history)))
 
         # plot generated energy and load
         props_of_interest = ['residual_generation', 'total_load', 'residual_load']
@@ -470,7 +471,7 @@ class EnergyManagementEnv(gym.Env):
         plot_mat(ax[0, 1], energy_labels, feature_mat, 'Energy')
         plot_mat(ax[1, 1], time_labels, feature_mat[len(energy_labels):], 'Time')
 
-        # weather observations (only now, not forecast)
+        # plot weather observations (only current, not forecast)
         for i, l in enumerate(self.weather_labels):
             mean_values = feature_mat[len(energy_labels)+len(time_labels)+i]
             std_values = feature_mat[len(energy_labels)+len(time_labels)+i+len(self.weather_labels)]
@@ -479,23 +480,19 @@ class EnergyManagementEnv(gym.Env):
             weather_ax.legend()
             weather_ax.set_title('Weather Observation')
 
-        # plot actions and rewards in one
+        # plot reward
         reward_steps = []
         reward_values = []
-        action_steps = []
-        action_values = []
         for state in self.state_history:
             if state.reward is not None:
                 reward_steps.append(state.step_no)
                 reward_values.append(state.reward)
-            if state.action is not None:
-                action_steps.append(state.step_no)
-                action_values.append(state.action)
 
         reward_ax.plot(reward_steps, reward_values, label='reward')
         reward_ax.set_ylabel('reward')
         reward_ax.set_title('Rewards')
 
+        # plot performance stats
         total_reward = 0
         for state in self.state_history:
             total_reward += state.reward

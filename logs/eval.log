@@ -1,3 +1,10 @@
+"""
+    CPU: AMD Ryzen 5900x
+    GPU: Nvidia Geforce RTX2070
+    Energy for running all experiments: ~1.07KWh
+"""
+
+
 # experiment 0, steps 150000
 mean 1099.3132539 | std 267.81187607181096
 mean 1029.9487654 | std 147.85284985737692

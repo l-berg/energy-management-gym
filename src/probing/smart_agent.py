@@ -1,7 +1,4 @@
-# https://pythonprogramming.net/saving-and-loading-reinforcement-learning-stable-baselines-3-tutorial/ TODO
-# Energy for 100k steps: 50312 J ~ 14Wh
 import numpy as np
-
 import src.environment.energy_management as em
 from stable_baselines3 import PPO
 from stable_baselines3 import DQN

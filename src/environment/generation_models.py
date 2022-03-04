@@ -1,4 +1,3 @@
-
 class PowerPlant:
     """Parent class for all power generation models"""
     def __init__(self, current_output, max_capacity):
